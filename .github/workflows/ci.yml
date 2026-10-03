@@ -26,11 +26,13 @@ jobs:
 
     - name: Configure git identity
       run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
     - name: Build and test
       run: ./gradlew build
 
     - name: Generate reports and publish website
       run: ./gradlew deployReports
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

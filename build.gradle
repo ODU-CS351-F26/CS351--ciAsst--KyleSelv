@@ -96,9 +96,19 @@ tasks.register('reports') {
 //  Report deployment (GitHub Pages, gh-pages branch)
 // ---------------------------------------------------------------
 
+def ciToken = System.getenv('GITHUB_TOKEN')
+def ciRepo  = System.getenv('GITHUB_REPOSITORY')
+
 gitPublish {
-    // No repoUri: git-publish uses this repository's own "origin" remote.
-    // (On the CI runner that is an https URL with a token, which is what we need.)
+    if (ciToken && ciRepo) {
+        // Running on GitHub Actions: authenticate with the workflow token
+        repoUri = "https://x-access-token:${ciToken}@github.com/${ciRepo}.git"
+    } else {
+        // Running locally: use this repository's own origin remote
+        repoUri = providers.exec {
+            commandLine 'git', 'remote', 'get-url', 'origin'
+        }.standardOutput.asText.get().trim()
+    }
     branch = 'gh-pages'
     sign = false
     commitMessage = 'Publish project reports'
