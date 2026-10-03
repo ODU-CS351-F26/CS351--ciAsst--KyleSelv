@@ -1,6 +1,7 @@
 plugins {
    id 'java'
    id 'application'
+   id 'pmd'
    id 'org.ajoberstar.git-publish' version '4.2.0'
 }
 
@@ -15,13 +16,15 @@ java {
 }
 
 dependencies {
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.7.0'
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation 'org.hamcrest:hamcrest-library:2.2'
 }
 
 tasks.withType(Test) {
     useJUnitPlatform()
-    ignoreFailures = true
+    ignoreFailures = true   // keep going so CI can still publish reports
     testLogging {
         events "passed", "skipped", "failed"
         }
@@ -31,3 +34,93 @@ application { //Allows  ./gradlew run --args=path-to-test-data
     mainClass = 'edu.odu.cs.MostCommonWords'
 }
 
+
+// ---------------------------------------------------------------
+//  Static analysis (PMD) -- src/main/java only
+// ---------------------------------------------------------------
+
+pmd {
+    ignoreFailures = true
+    ruleSets = [
+        'category/java/errorprone.xml',
+        'category/java/bestpractices.xml'
+    ]
+}
+
+tasks.named('pmdTest') {
+    enabled = false          // do not analyze src/test/java
+}
+
+tasks.withType(Pmd).configureEach {
+    reports {
+        html.required = true
+        xml.required = false
+    }
+}
+
+
+// ---------------------------------------------------------------
+//  Report generation
+// ---------------------------------------------------------------
+
+def reportsDir = layout.buildDirectory.dir('reports')
+
+// Copy the hand-written web content (index.md, etc.) into build/reports/
+tasks.register('copyWebContent', Copy) {
+    description = 'Copies src/main/html/ into build/reports/.'
+    dependsOn 'build'
+    from 'src/main/html'
+    into reportsDir
+}
+
+// Copy the generated documentation (build/docs/javadoc/) into build/reports/
+tasks.register('copyDocs', Copy) {
+    description = 'Copies build/docs/ into build/reports/.'
+    dependsOn 'build', 'javadoc'
+    from layout.buildDirectory.dir('docs')
+    into reportsDir
+}
+
+// Build, test, generate javadoc and PMD, and collect everything in build/reports/
+tasks.register('reports') {
+    group = 'documentation'
+    description = 'Assembles test, javadoc, and static analysis reports in build/reports/.'
+    dependsOn 'build', 'javadoc', 'pmdMain', 'copyWebContent', 'copyDocs'
+    doLast {
+        println 'reports has completed.'
+    }
+}
+
+
+// ---------------------------------------------------------------
+//  Report deployment (GitHub Pages, gh-pages branch)
+// ---------------------------------------------------------------
+
+gitPublish {
+    // No repoUri: git-publish uses this repository's own "origin" remote.
+    // (On the CI runner that is an https URL with a token, which is what we need.)
+    branch = 'gh-pages'
+    sign = false
+    commitMessage = 'Publish project reports'
+
+    contents {
+        // Site home page at the root of gh-pages
+        from('src/main/html')
+        // The whole build/reports/ directory, published as reports/
+        from(reportsDir) {
+            into 'reports'
+        }
+    }
+}
+
+// Make sure the reports exist before anything is copied for publishing
+tasks.named('gitPublishCopy') {
+    dependsOn 'reports'
+}
+
+// Build the reports and push them to the website
+tasks.register('deployReports') {
+    group = 'documentation'
+    description = 'Generates the reports and publishes them to GitHub Pages.'
+    dependsOn 'reports', 'gitPublishPush'
+}
